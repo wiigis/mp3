@@ -1,4 +1,5 @@
 const User = require("../models/user.js");
+const Task = require("../models/task.js");
 const mongoose = require("mongoose");
 
 module.exports = function (router) {
@@ -121,6 +122,108 @@ module.exports = function (router) {
             });
         }
     });
+
+    
+    userRoute.put(async function(req, res) {
+        try {
+            const userId = req.params.id;
+            const { name, email } = req.body;
+
+            if (!mongoose.isObjectIdOrHexString(userId)) {
+                return res.status(400).json({
+                    message: "Invalid user ID",
+                    data: {}
+                });
+            }
+
+            if (
+                (name !== undefined &&
+                    (typeof name !== "string" || !name.trim())) ||
+                (email !== undefined &&
+                    (typeof email !== "string" || !email.trim()))
+            ) {
+                return res.status(400).json({
+                    message: "Invalid name or email",
+                    data: {}
+                });
+            }
+
+            const session = await mongoose.startSession();
+            let updatedUser;
+
+            try {
+                await session.withTransaction(async () => {
+
+                    const user = await User.findById(userId)
+                        .session(session);
+
+                    if (!user) {
+                        const error = new Error("User not found");
+                        error.status = 404;
+                        throw error;
+                    }
+
+                    if (name !== undefined) {
+                        user.name = name;
+                    }
+
+                    if (email !== undefined) {
+                        user.email = email;
+                    }
+
+                    await user.save({ session });
+
+                    if (name !== undefined) {
+                        await Task.updateMany(
+                            { assignedUser: userId },
+                            {
+                                $set: {
+                                    assignedUserName: user.name
+                                }
+                            },
+                            { session }
+                        );
+                    }
+
+                    updatedUser = user;
+                });
+
+            } finally {
+                await session.endSession();
+            }
+
+            return res.status(200).json({
+                message: "User updated successfully",
+                data: updatedUser
+            });
+
+        } catch (error) {
+            if (error.status === 404) {
+                return res.status(404).json({
+                    message: error.message,
+                    data: {}
+                });
+            }
+
+            if (
+                error.code === 11000 ||
+                error.name === "ValidationError"
+            ) {
+                return res.status(400).json({
+                    message: "Invalid or duplicate user information",
+                    data: {}
+                });
+            }
+
+            console.error(error);
+
+            return res.status(500).json({
+                message: "Unable to update user",
+                data: {}
+            });
+        }
+    });
+
 
 
     return router;

@@ -94,6 +94,7 @@ module.exports = function (router) {
             });
 
             // saving to MongoDB
+    
             
     const session = await mongoose.startSession();
 
@@ -144,6 +145,44 @@ module.exports = function (router) {
         }
     });
 
+    
+    var taskRoute = router.route('/:id');
+
+    taskRoute.get(async function(req, res) {
+        try {
+            const taskId = req.params.id;
+
+            // Check whether the ID format is valid
+            if (!mongoose.isObjectIdOrHexString(taskId)) {
+                return res.status(404).json({
+                    message: "Task not found",
+                    data: {}
+                });
+            }
+
+            // Search MongoDB for the task
+            const task = await Task.findById(taskId);
+
+            // Check whether the task exists
+            if (!task) {
+                return res.status(404).json({
+                    message: "Task not found",
+                    data: {}
+                });
+            }
+
+            return res.status(200).json({
+                message: "OK",
+                data: task
+            });
+
+        } catch (error) {
+            return res.status(500).json({
+                message: "Unable to retrieve task",
+                data: {}
+            });
+        }
+    });
 
     return router;
 };
