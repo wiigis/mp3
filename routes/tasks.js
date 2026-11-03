@@ -2,7 +2,9 @@ const Task = require("../models/task.js");
 
 module.exports = function (router) {
 
-    router.get("/", async function (req, res) {
+    var tasksRoute = router.route('/');
+
+    tasksRoute.get(async function (req, res) {
         try {
             const tasks = await Task.find().limit(100);
 
