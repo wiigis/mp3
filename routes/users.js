@@ -1,4 +1,5 @@
 const User = require("../models/user.js");
+const mongoose = require("mongoose");
 
 module.exports = function (router) {
 
@@ -80,6 +81,47 @@ module.exports = function (router) {
             });
         }
     });
+
+    
+    var userRoute = router.route('/:id');
+
+    userRoute.get(async function(req, res) {
+        try {
+            const userId = req.params.id;
+
+            // Check whether the ID is valid
+            if (!mongoose.isObjectIdOrHexString(userId)) {
+                return res.status(404).json({
+                    message: "User not found",
+                    data: {}
+                });
+            }
+
+            // Find the user in MongoDB
+            const user = await User.findById(userId);
+
+            // Check whether the user exists
+            if (!user) {
+                return res.status(404).json({
+                    message: "User not found",
+                    data: {}
+                });
+            }
+
+            // Return the user
+            return res.status(200).json({
+                message: "OK",
+                data: user
+            });
+
+        } catch (error) {
+            return res.status(500).json({
+                message: "Unable to retrieve user",
+                data: {}
+            });
+        }
+    });
+
 
     return router;
 }; 

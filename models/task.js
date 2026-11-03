@@ -38,8 +38,9 @@ var TaskSchema = new mongoose.Schema({
         type: Date,
         default: Date.now
     }
-
+}, {
+    versionKey:false
 });
 
 // Export the Mongoose model
-module.exports = mongoose.model('Task', TaskSchema);
+module.exports = mongoose.model('Task', TaskSchema, "tasks");
