@@ -184,5 +184,198 @@ module.exports = function (router) {
         }
     });
 
+    taskRoute.put(async function(req, res) {
+        try {
+            const taskId = req.params.id;
+
+            // Validate task ID
+            if (!mongoose.isObjectIdOrHexString(taskId)) {
+                return res.status(400).json({
+                    message: "Invalid task ID",
+                    data: {}
+                });
+            }
+
+            const allowedFields = [
+                "name",
+                "description",
+                "deadline",
+                "completed",
+                "assignedUser"
+            ];
+
+            // Validate the request body
+            if (
+                !req.body ||
+                typeof req.body !== "object" ||
+                Array.isArray(req.body)
+            ) {
+                return res.status(400).json({
+                    message: "Invalid request body",
+                    data: {}
+                });
+            }
+
+            // Reject fields that cannot be changed directly
+            if (Object.keys(req.body).some(
+                field => !allowedFields.includes(field)
+            )) {
+                return res.status(400).json({
+                    message: "Unsupported task field",
+                    data: {}
+                });
+            }
+
+            const {
+                name,
+                description,
+                deadline,
+                completed,
+                assignedUser
+            } = req.body;
+
+            if (
+                (name !== undefined && (typeof name !== "string" || !name.trim())) || (description !== undefined && typeof description !== "string") ||
+                (completed !== undefined &&
+                    typeof completed !== "boolean") ||
+                (deadline !== undefined &&
+                    (deadline === null ||
+                    isNaN(new Date(deadline).getTime()))) ||
+                (assignedUser !== undefined &&
+                    (typeof assignedUser !== "string" ||
+                    (assignedUser !== "" &&
+                    !mongoose.isObjectIdOrHexString(assignedUser))))
+            ) {
+                return res.status(400).json({
+                    message: "Invalid task information",
+                    data: {}
+                });
+            }
+
+            const session = await mongoose.startSession();
+            let updatedTask;
+
+            try {
+                await session.withTransaction(async () => {
+
+                    // Find the existing task
+                    const task = await Task.findById(taskId)
+                        .session(session);
+
+                    if (!task) {
+                        const error = new Error("Task not found");
+                        error.status = 404;
+                        throw error;
+                    }
+
+                    const oldUserId = task.assignedUser;
+                    
+                    const newUserId = assignedUser !== undefined ? assignedUser : oldUserId;
+
+                    let newUser = null;
+
+                    // Find the new assigned user
+                    if (newUserId) {
+                        newUser = await User.findById(newUserId)
+                            .session(session);
+
+                        if (!newUser) {
+                            const error = new Error(
+                                "Assigned user not found"
+                            );
+                            error.status = 404;
+                            throw error;
+                        }
+                    }
+
+                    // Update regular task fields
+                    if (name !== undefined) {
+                        task.name = name;
+                    }
+
+                    if (description !== undefined) {
+                        task.description = description;
+                    }
+
+                    if (deadline !== undefined) {
+                        task.deadline = deadline;
+                    }
+
+                    if (completed !== undefined) {
+                        task.completed = completed;
+                    }
+
+                    task.assignedUser = newUserId || "";
+                    task.assignedUserName = newUser ? newUser.name : "unassigned";
+
+                    await task.save({ session });
+
+                    // Remove task from previous user's pendingTasks
+                    if (oldUserId) {
+                        await User.updateOne(
+                            { _id: oldUserId },
+                            {
+                                $pull: {
+                                    pendingTasks: taskId
+                                }
+                            },
+                            { session }
+                        );
+                    }
+
+                    // Add task to new user's pendingTasks
+                    // only if the task is incomplete
+                    if (newUser && !task.completed) {
+                        await User.updateOne(
+                            { _id: newUser._id },
+                            {
+                                $addToSet: {
+                                    pendingTasks: taskId
+                                }
+                            },
+                            { session }
+                        );
+                    }
+
+                    updatedTask = task;
+                });
+
+            } finally {
+                await session.endSession();
+            }
+
+            return res.status(200).json({
+                message: "Task updated successfully",
+                data: updatedTask
+            });
+
+        } catch (error) {
+            if (error.status === 404) {
+                return res.status(404).json({
+                    message: error.message,
+                    data: {}
+                });
+            }
+
+            if (
+                error.name === "ValidationError" ||
+                error.name === "CastError"
+            ) {
+                return res.status(400).json({
+                    message: "Invalid task information",
+                    data: {}
+                });
+            }
+
+            console.error(error);
+
+            return res.status(500).json({
+                message: "Unable to update task",
+                data: {}
+            });
+        }
+    });
+
+
     return router;
 };
