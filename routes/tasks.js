@@ -376,6 +376,76 @@ module.exports = function (router) {
         }
     });
 
+    
+    taskRoute.delete(async function(req, res) {
+        try {
+            const taskId = req.params.id;
+
+            // Validate task ID
+            if (!mongoose.isObjectIdOrHexString(taskId)) {
+                return res.status(400).json({
+                    message: "Invalid task ID",
+                    data: {}
+                });
+            }
+
+            const session = await mongoose.startSession();
+
+            try {
+                await session.withTransaction(async () => {
+
+                    // Find the task
+                    const task = await Task.findById(taskId)
+                        .session(session);
+
+                    if (!task) {
+                        const error = new Error("Task not found");
+                        error.status = 404;
+                        throw error;
+                    }
+
+                    // removing task from any users pending tasks
+                    await User.updateMany(
+                        { pendingTasks: taskId },
+                        {
+                            $pull: {
+                                pendingTasks: taskId
+                            }
+                        },
+                        { session }
+                    );
+
+                    // deleting task doc
+                    await Task.deleteOne(
+                        { _id: taskId },
+                        { session }
+                    );
+                });
+
+            } finally {
+                await session.endSession();
+            }
+
+            return res.status(204).send();
+
+        } catch (error) {
+            if (error.status === 404) {
+                return res.status(404).json({
+                    message: "Task not found",
+                    data: {}
+                });
+            }
+
+            console.error(error);
+
+            return res.status(500).json({
+                message: "Unable to delete task",
+                data: {}
+            });
+        }
+    });
+
+
 
     return router;
 };
