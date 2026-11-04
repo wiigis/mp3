@@ -159,8 +159,13 @@ module.exports = function (router) {
                 });
             }
 
-            // Find the user in MongoDB
-            const user = await User.findById(userId);
+            const selectOptions = req.query.select
+                ? JSON.parse(req.query.select)
+                : {};
+
+            const user = await User.findById(userId)
+                .select(selectOptions);
+
 
             // Check whether the user exists
             if (!user) {

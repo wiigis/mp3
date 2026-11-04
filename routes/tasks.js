@@ -249,10 +249,10 @@ module.exports = function (router) {
         try {
             const taskId = req.params.id;
 
-            // Validate task ID
+            
             if (!mongoose.isObjectIdOrHexString(taskId)) {
-                return res.status(400).json({
-                    message: "Invalid task ID",
+                return res.status(404).json({
+                    message: "Task not found",
                     data: {}
                 });
             }
