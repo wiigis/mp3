@@ -224,6 +224,77 @@ module.exports = function (router) {
         }
     });
 
+    
+    userRoute.delete(async function(req, res) {
+        try {
+            const userId = req.params.id;
+
+            if (!mongoose.isObjectIdOrHexString(userId)) {
+                return res.status(400).json({
+                    message: "Invalid user ID",
+                    data: {}
+                });
+            }
+
+            const session = await mongoose.startSession();
+
+            try {
+                await session.withTransaction(async () => {
+
+                    // find user
+                    const user = await User.findById(userId)
+                        .session(session);
+
+                    if (!user) {
+                        const error = new Error("User not found");
+                        error.status = 404;
+                        throw error;
+                    }
+
+                    // Unassign all tasks belonging to this user
+                    await Task.updateMany(
+                        { assignedUser: userId },
+                        {
+                            $set: {
+                                assignedUser: "",
+                                assignedUserName: "unassigned"
+                            }
+                        },
+                        { session }
+                    );
+
+                    // Delete the user document
+                    await User.deleteOne(
+                        { _id: userId },
+                        { session }
+                    );
+                });
+
+            } finally {
+                await session.endSession();
+            }
+
+            // Successful deletion
+            return res.status(204).send();
+
+        } catch (error) {
+            if (error.status === 404) {
+                return res.status(404).json({
+                    message: "User not found",
+                    data: {}
+                });
+            }
+
+            console.error(error);
+
+            return res.status(500).json({
+                message: "Unable to delete user",
+                data: {}
+            });
+        }
+    });
+
+
 
 
     return router;
