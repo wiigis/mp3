@@ -256,6 +256,15 @@ module.exports = function (router) {
                     data: {}
                 });
             }
+            
+            const existingTask = await Task.findById(taskId);
+
+            if (!existingTask) {
+                return res.status(404).json({
+                    message: "Task not found",
+                    data: {}
+                });
+            }
 
             const allowedFields = [
                 "name",
