@@ -188,23 +188,46 @@ module.exports = function (router) {
     userRoute.put(async function(req, res) {
         try {
             const userId = req.params.id;
-            const { name, email } = req.body;
 
             if (!mongoose.isObjectIdOrHexString(userId)) {
-                return res.status(400).json({
-                    message: "Invalid user ID",
+                return res.status(404).json({
+                    message: "User not found",
                     data: {}
                 });
             }
+
+            if (!req.body || typeof req.body !== "object" ||
+                Array.isArray(req.body)) {
+                return res.status(400).json({
+                    message: "Invalid request body",
+                    data: {}
+                });
+            }
+
+            const { name, email, pendingTasks } = req.body;
 
             if (
                 (name !== undefined &&
                     (typeof name !== "string" || !name.trim())) ||
                 (email !== undefined &&
-                    (typeof email !== "string" || !email.trim()))
+                    (typeof email !== "string" || !email.trim())) ||
+                (pendingTasks !== undefined &&
+                    (!Array.isArray(pendingTasks) ||
+                    pendingTasks.some(id =>
+                        typeof id !== "string" ||
+                        !mongoose.isObjectIdOrHexString(id)
+                    )))
             ) {
                 return res.status(400).json({
-                    message: "Invalid name or email",
+                    message: "Invalid user information",
+                    data: {}
+                });
+            }
+
+            if (pendingTasks !== undefined &&
+                new Set(pendingTasks).size !== pendingTasks.length) {
+                return res.status(400).json({
+                    message: "Duplicate pending task IDs",
                     data: {}
                 });
             }
@@ -214,7 +237,6 @@ module.exports = function (router) {
 
             try {
                 await session.withTransaction(async () => {
-
                     const user = await User.findById(userId)
                         .session(session);
 
@@ -230,6 +252,68 @@ module.exports = function (router) {
 
                     if (email !== undefined) {
                         user.email = email;
+                    }
+
+                    if (pendingTasks !== undefined) {
+                        const requestedIds = pendingTasks.map(id =>
+                            id.toLowerCase()
+                        );
+
+                        const tasks = await Task.find({
+                            _id: { $in: requestedIds }
+                        }).session(session);
+
+                        if (tasks.length !== requestedIds.length) {
+                            const error = new Error("Task not found");
+                            error.status = 404;
+                            throw error;
+                        }
+
+                        if (tasks.some(task => task.completed)) {
+                            const error = new Error(
+                                "Completed tasks cannot be pending"
+                            );
+                            error.status = 400;
+                            throw error;
+                        }
+
+                        const currentTasks = await Task.find({
+                            assignedUser: userId,
+                            completed: false
+                        }).session(session);
+
+                        const requestedSet = new Set(requestedIds);
+
+                        for (const task of currentTasks) {
+                            if (!requestedSet.has(task._id.toString())) {
+                                task.assignedUser = "";
+                                task.assignedUserName = "unassigned";
+                                await task.save({ session });
+                            }
+                        }
+
+                        for (const task of tasks) {
+                            const previousUserId = task.assignedUser;
+
+                            if (previousUserId &&
+                                previousUserId !== userId) {
+                                await User.updateOne(
+                                    { _id: previousUserId },
+                                    {
+                                        $pull: {
+                                            pendingTasks: task._id.toString()
+                                        }
+                                    },
+                                    { session }
+                                );
+                            }
+
+                            task.assignedUser = userId;
+                            task.assignedUserName = user.name;
+                            await task.save({ session });
+                        }
+
+                        user.pendingTasks = requestedIds;
                     }
 
                     await user.save({ session });
@@ -267,11 +351,13 @@ module.exports = function (router) {
             }
 
             if (
+                error.status === 400 ||
                 error.code === 11000 ||
-                error.name === "ValidationError"
+                error.name === "ValidationError" ||
+                error.name === "CastError"
             ) {
                 return res.status(400).json({
-                    message: "Invalid or duplicate user information",
+                    message: error.message,
                     data: {}
                 });
             }
@@ -284,6 +370,7 @@ module.exports = function (router) {
             });
         }
     });
+
 
     
     userRoute.delete(async function(req, res) {

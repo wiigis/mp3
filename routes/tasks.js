@@ -262,7 +262,8 @@ module.exports = function (router) {
                 "description",
                 "deadline",
                 "completed",
-                "assignedUser"
+                "assignedUser",
+                "assignedUserName"
             ];
 
             // Validate the request body
@@ -292,7 +293,8 @@ module.exports = function (router) {
                 description,
                 deadline,
                 completed,
-                assignedUser
+                assignedUser,
+                assignedUserName
             } = req.body;
 
             if (
@@ -349,10 +351,22 @@ module.exports = function (router) {
                         }
                     }
 
+                    
+                    if (
+                        assignedUserName !== undefined &&
+                        assignedUserName !== (newUser ? newUser.name : "unassigned")
+                    ) {
+                        const error = new Error("Assigned user name does not match");
+                        error.status = 400;
+                        throw error;
+                    }
+
+
                     // Update regular task fields
                     if (name !== undefined) {
                         task.name = name;
                     }
+                    
 
                     if (description !== undefined) {
                         task.description = description;
@@ -418,6 +432,13 @@ module.exports = function (router) {
                 });
             }
 
+            if (error.status === 400) {
+                return res.status(400).json({
+                    message: error.message,
+                    data: {}
+                });
+            }
+
             if (
                 error.name === "ValidationError" ||
                 error.name === "CastError"
@@ -445,7 +466,7 @@ module.exports = function (router) {
             // Validate task ID
             if (!mongoose.isObjectIdOrHexString(taskId)) {
                 return res.status(400).json({
-                    message: "Invalid task ID",
+                    message: "Task not found",
                     data: {}
                 });
             }
