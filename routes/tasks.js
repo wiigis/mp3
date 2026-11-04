@@ -6,22 +6,70 @@ module.exports = function (router) {
 
     var tasksRoute = router.route('/');
 
-    tasksRoute.get(async function (req, res) {
+    
+    tasksRoute.get(async function(req, res) {
         try {
-            const tasks = await Task.find().limit(100);
+            const { where, sort, select, skip, limit, count } = req.query;
 
-            res.status(200).json({
+            const filter = where ? JSON.parse(where) : {};
+            const sortOptions = sort ? JSON.parse(sort) : {};
+            const selectOptions = select ? JSON.parse(select) : {};
+
+            const skipValue = skip !== undefined ? Number(skip) : 0;
+            const limitValue = limit !== undefined ? Number(limit) : 100;
+
+            if (
+                !Number.isSafeInteger(skipValue) ||
+                skipValue < 0 ||
+                !Number.isSafeInteger(limitValue) ||
+                limitValue < 0
+            ) {
+                return res.status(400).json({
+                    message: "Invalid skip or limit",
+                    data: {}
+                });
+            }
+
+            if (count === "true") {
+                const total = await Task.countDocuments(filter);
+
+                return res.status(200).json({
+                    message: "OK",
+                    data: total
+                });
+            }
+
+            const tasks = await Task.find(filter)
+                .sort(sortOptions)
+                .select(selectOptions)
+                .skip(skipValue)
+                .limit(limitValue);
+
+            return res.status(200).json({
                 message: "OK",
                 data: tasks
             });
 
         } catch (error) {
-            res.status(500).json({
+            if (
+                error instanceof SyntaxError ||
+                error.name === "CastError"
+            ) {
+                return res.status(400).json({
+                    message: "Invalid query parameters",
+                    data: {}
+                });
+            }
+
+            console.error(error);
+
+            return res.status(500).json({
                 message: "Unable to retrieve tasks",
                 data: {}
             });
         }
     });
+
 
     
     tasksRoute.post(async function(req, res) {
@@ -148,11 +196,11 @@ module.exports = function (router) {
     
     var taskRoute = router.route('/:id');
 
+    
     taskRoute.get(async function(req, res) {
         try {
             const taskId = req.params.id;
 
-            // Check whether the ID format is valid
             if (!mongoose.isObjectIdOrHexString(taskId)) {
                 return res.status(404).json({
                     message: "Task not found",
@@ -160,10 +208,13 @@ module.exports = function (router) {
                 });
             }
 
-            // Search MongoDB for the task
-            const task = await Task.findById(taskId);
+            const selectOptions = req.query.select
+                ? JSON.parse(req.query.select)
+                : {};
 
-            // Check whether the task exists
+            const task = await Task.findById(taskId)
+                .select(selectOptions);
+
             if (!task) {
                 return res.status(404).json({
                     message: "Task not found",
@@ -177,12 +228,22 @@ module.exports = function (router) {
             });
 
         } catch (error) {
+            if (error instanceof SyntaxError) {
+                return res.status(400).json({
+                    message: "Invalid select parameter",
+                    data: {}
+                });
+            }
+
+            console.error(error);
+
             return res.status(500).json({
                 message: "Unable to retrieve task",
                 data: {}
             });
         }
     });
+
 
     taskRoute.put(async function(req, res) {
         try {
