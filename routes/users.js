@@ -6,22 +6,83 @@ module.exports = function (router) {
 
     var usersRoute = router.route('/');
 
-    usersRoute.get(async function (req, res) {
+    
+    usersRoute.get(async function(req, res) {
         try {
-            const users = await User.find();
+            const {
+                where,
+                sort,
+                select,
+                skip,
+                limit,
+                count
+            } = req.query;
 
-            res.status(200).json({
+            const filter = where ? JSON.parse(where) : {};
+            const sortOptions = sort ? JSON.parse(sort) : {};
+            const selectOptions = select ? JSON.parse(select) : {};
+
+            const skipValue = skip !== undefined ? Number(skip) : 0;
+            const limitValue = limit !== undefined ? Number(limit) : null;
+
+            if (
+                !Number.isSafeInteger(skipValue) ||
+                skipValue < 0 ||
+                (limitValue !== null &&
+                    (!Number.isSafeInteger(limitValue) ||
+                    limitValue < 0))
+            ) {
+                return res.status(400).json({
+                    message: "Invalid skip or limit",
+                    data: {}
+                });
+            }
+
+            if (count === "true") {
+                const total = await User.countDocuments(filter);
+
+                return res.status(200).json({
+                    message: "OK",
+                    data: total
+                });
+            }
+
+            let query = User.find(filter)
+                .sort(sortOptions)
+                .select(selectOptions)
+                .skip(skipValue);
+
+            if (limitValue !== null) {
+                query = query.limit(limitValue);
+            }
+
+            const users = await query;
+
+            return res.status(200).json({
                 message: "OK",
                 data: users
             });
 
         } catch (error) {
-            res.status(500).json({
+            if (
+                error instanceof SyntaxError ||
+                error.name === "CastError"
+            ) {
+                return res.status(400).json({
+                    message: "Invalid query parameters",
+                    data: {}
+                });
+            }
+
+            console.error(error);
+
+            return res.status(500).json({
                 message: "Unable to retrieve users",
                 data: {}
             });
         }
     });
+
 
 
 
