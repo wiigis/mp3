@@ -225,7 +225,7 @@ module.exports = function (router) {
             }
 
             if (pendingTasks !== undefined &&
-                new Set(pendingTasks).size !== pendingTasks.length) {
+                new Set(pendingTasks.map(id => id.toLowerCase())).size !== pendingTasks.length) {
                 return res.status(400).json({
                     message: "Duplicate pending task IDs",
                     data: {}
